@@ -14,7 +14,7 @@ contract PizzaPool {
     event TakePool(uint256 poolId, uint256 subsidy);
     event Distribute(uint256 poolId, uint256 sliceId, uint256 subsidy);
 
-    VirtualBitcoinInterface vbtc;
+    VirtualBitcoinInterface private vbtc;
     
     struct Pool {
         uint256 pizzaId;
@@ -30,8 +30,8 @@ contract PizzaPool {
         uint256 takenBlock;
         uint256 takenAccSubsidy;
     }
-    Pool[] private pools;
-    mapping(uint256 => uint256) pizzaToPool;
+    Pool[] public pools;
+    mapping(uint256 => uint256) public pizzaToPool;
 
     struct Slice {
         address owner;
@@ -39,8 +39,8 @@ contract PizzaPool {
         uint256 minedBlock;
         uint256 accSubsidy;
     }
-    mapping(uint256 => Slice[]) slices;
-    mapping(uint256 => mapping(address => uint256)) ownerToSlice;
+    mapping(uint256 => Slice[]) public slices;
+    mapping(uint256 => mapping(address => uint256)) public ownerToSlice;
 
     constructor(address vbtcAddress) {
         vbtc = VirtualBitcoinInterface(vbtcAddress);
@@ -49,6 +49,10 @@ contract PizzaPool {
     function calculateAccSubsidy(uint256 poolId) internal view returns (uint256) {
         Pool memory pool = pools[poolId];
         return pool.inAccSubsidy + pool.outAccSubsidy + vbtc.subsidyOf(pool.pizzaId) / vbtc.powerOf(pool.pizzaId);
+    }
+
+    function poolCount() external view returns (uint256) {
+        return pools.length;
     }
 
     function createPool(uint256 power) external returns (uint256) {
@@ -129,6 +133,10 @@ contract PizzaPool {
         vbtc.transferFrom(address(this), msg.sender, pool.inSlice);
 
         emit DeletePool(msg.sender, poolId);
+    }
+
+    function sliceCount(uint256 poolId) external view returns (uint256) {
+        return slices[poolId].length;
     }
 
     function joinPool(uint256 poolId, uint256 amount) external {
