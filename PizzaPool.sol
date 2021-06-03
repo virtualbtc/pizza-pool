@@ -31,7 +31,7 @@ contract PizzaPool {
         uint256 takenAccSubsidy;
     }
     Pool[] public pools;
-    mapping(uint256 => uint256) public pizzaToPool;
+    mapping(uint256 => uint256) public pizzaToPool;     //not used
 
     struct Slice {
         address owner;
@@ -56,13 +56,12 @@ contract PizzaPool {
     }
 
     function createPool(uint256 power) external returns (uint256) {
-        
-        uint256 pizzaId = vbtc.buyPizza(power);
         uint256 price = vbtc.pizzaPrice(power);
+        vbtc.transferFrom(msg.sender, address(this), price);    //transfer should be needed beforing buying pizza
 
-        vbtc.transferFrom(msg.sender, address(this), price);
-
+        uint256 pizzaId = vbtc.buyPizza(power);
         uint256 poolId = pools.length;
+
         pools.push(Pool({
             owner: msg.sender,
             pizzaId: pizzaId,
@@ -105,7 +104,7 @@ contract PizzaPool {
         } else { // downgrade
             uint256 price = vbtc.pizzaPrice(currentPower - power);
             pool.inSlice -= price;
-            vbtc.transferFrom(address(this), msg.sender, price);
+            vbtc.transfer(msg.sender, price);
         }
 
         emit ChangePool(msg.sender, poolId, power);
@@ -124,13 +123,13 @@ contract PizzaPool {
         for (uint256 sliceId = 0; sliceId < sl; sliceId += 1) {
             distribute(pool.accSubsidyBlock, poolId, sliceId);
             Slice memory slice = s[sliceId];
-            vbtc.transferFrom(address(this), slice.owner, slice.amount);
+            vbtc.transfer(slice.owner, slice.amount);
         }
         
         delete pools[poolId];
         delete slices[poolId];
 
-        vbtc.transferFrom(address(this), msg.sender, pool.inSlice);
+        vbtc.transfer(msg.sender, pool.inSlice);
 
         emit DeletePool(msg.sender, poolId);
     }
@@ -185,7 +184,7 @@ contract PizzaPool {
             uint256 diff = currentAmount - amount;
             pool.inSlice += diff;
             pool.outSlice -= diff;
-            vbtc.transferFrom(address(this), msg.sender, diff);
+            vbtc.transfer(msg.sender, diff);
         }
         
         emit ChangeSlice(msg.sender, poolId, sliceId, amount);
@@ -206,7 +205,7 @@ contract PizzaPool {
 
         pool.inSlice += amount;
         pool.outSlice -= amount;
-        vbtc.transferFrom(address(this), owner, amount);
+        vbtc.transfer(owner, amount);
         
         emit DeleteSlice(poolId, sliceId);
     }
@@ -241,7 +240,7 @@ contract PizzaPool {
         Pool storage pool = pools[poolId];
 
         uint256 subsidy = (pool.inAccSubsidy - pool.takenAccSubsidy) * (block.number - pool.takenBlock);
-        vbtc.transferFrom(address(this), pool.owner, subsidy);
+        vbtc.transfer(pool.owner, subsidy);
 
         pool.takenBlock = block.number;
         pool.takenAccSubsidy = pool.inAccSubsidy;
@@ -254,7 +253,7 @@ contract PizzaPool {
         Slice storage slice = slices[poolId][sliceId];
 
         uint256 subsidy = (poolAccSubsidy - slice.accSubsidy) * (block.number - slice.minedBlock);
-        vbtc.transferFrom(address(this), slice.owner, subsidy);
+        vbtc.transfer(slice.owner, subsidy);
 
         slice.minedBlock = block.number;
         slice.accSubsidy = poolAccSubsidy;
