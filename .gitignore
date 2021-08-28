@@ -12,5 +12,21 @@ Desktop.ini
 .directory
 *~
 
+# npm
+node_modules
+package-lock.json
+*.log
+*.gz
+
+# local env variables
+.env
+
 # vscode
 .history
+
+# hardhat
+cache
+artifacts
+
+# typechain
+typechain
