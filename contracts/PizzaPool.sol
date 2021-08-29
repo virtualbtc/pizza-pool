@@ -109,6 +109,9 @@ contract PizzaPool is IPizzaPool {
 
         delete pools[poolId];
         delete pizzaToPool[pizzaId];
+        delete slices[poolId][msg.sender];
+        delete pointsCorrection[poolId][msg.sender];
+        delete claimed[poolId][msg.sender];
 
         emit DeletePool(poolId);
     }
