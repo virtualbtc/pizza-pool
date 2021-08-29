@@ -28,8 +28,11 @@ contract PizzaPool is IPizzaPool {
     }
     Sale[] public override sales;
 
+    uint256 immutable SLICES_PER_POWER;
+
     constructor(IVirtualBitcoin _vbtc) {
         vbtc = _vbtc;
+        SLICES_PER_POWER = _vbtc.pizzaPrice(1);
     }
 
     function poolCount() external view override returns (uint256) {
@@ -37,7 +40,7 @@ contract PizzaPool is IPizzaPool {
     }
 
     function createPool(uint256 power) external override returns (uint256) {
-        uint256 slice = vbtc.pizzaPrice(power);
+        uint256 slice = SLICES_PER_POWER * power;
         vbtc.transferFrom(msg.sender, address(this), slice);
 
         uint256 pizzaId = vbtc.buyPizza(power);
@@ -81,7 +84,7 @@ contract PizzaPool is IPizzaPool {
         bool _update = (block.number != pool.lastRewardBlock);
         if (currentPower < power) {
             // upgrade
-            uint256 slice = vbtc.pizzaPrice(power - currentPower);
+            uint256 slice = SLICES_PER_POWER * (power - currentPower);
             slices[poolId][msg.sender] += slice;
 
             uint256 balanceBefore;
@@ -91,7 +94,7 @@ contract PizzaPool is IPizzaPool {
             if (_update) {
                 uint256 balanceAfter = vbtc.balanceOf(address(this));
                 uint256 slicesIn = balanceAfter - balanceBefore;
-                if (slicesIn > 0) updateBalance(pool, slicesIn, vbtc.pizzaPrice(currentPower));
+                if (slicesIn > 0) updateBalance(pool, slicesIn, SLICES_PER_POWER * currentPower);
             }
 
             pointsCorrection[poolId][msg.sender] -= int256(pool.pointsPerShare * slice);
@@ -99,7 +102,7 @@ contract PizzaPool is IPizzaPool {
             emit ChangePool(poolId, power);
         } else if (currentPower > power) {
             // downgrade
-            uint256 slice = vbtc.pizzaPrice(currentPower - power);
+            uint256 slice = SLICES_PER_POWER * (currentPower - power);
             slices[poolId][msg.sender] -= slice;
 
             uint256 balanceBefore;
@@ -109,7 +112,7 @@ contract PizzaPool is IPizzaPool {
             if (_update) {
                 uint256 balanceAfter = vbtc.balanceOf(address(this));
                 uint256 slicesIn = balanceAfter - balanceBefore;
-                if (slicesIn > 0) updateBalance(pool, slicesIn, vbtc.pizzaPrice(currentPower));
+                if (slicesIn > 0) updateBalance(pool, slicesIn, SLICES_PER_POWER * currentPower);
             }
 
             pointsCorrection[poolId][msg.sender] += int256(pool.pointsPerShare * slice);
@@ -123,7 +126,7 @@ contract PizzaPool is IPizzaPool {
         require(pool.owner == msg.sender);
 
         uint256 pizzaId = pool.pizzaId;
-        uint256 slice = vbtc.pizzaPrice(vbtc.powerOf(pizzaId));
+        uint256 slice = SLICES_PER_POWER * (vbtc.powerOf(pizzaId));
         slices[poolId][msg.sender] -= slice;
 
         uint256 balanceBefore = vbtc.balanceOf(address(this));
@@ -198,7 +201,7 @@ contract PizzaPool is IPizzaPool {
         uint256 pointsPerShare = pool.pointsPerShare;
         uint256 value = vbtc.subsidyOf(pool.pizzaId);
         if (value > 0) {
-            pointsPerShare += (value * 1e60) / vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId));
+            pointsPerShare += (value * 1e60) / (SLICES_PER_POWER * vbtc.powerOf(pool.pizzaId));
         }
         return
             uint256(int256(pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]) /
@@ -210,7 +213,7 @@ contract PizzaPool is IPizzaPool {
         Pool storage pool = pools[poolId];
         require(pool.lastRewardBlock != block.number, "Already mined in this block");
         uint256 slicesIn = vbtc.mine(pool.pizzaId);
-        if (slicesIn > 0) updateBalance(pool, slicesIn, vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId)));
+        if (slicesIn > 0) updateBalance(pool, slicesIn, (SLICES_PER_POWER * vbtc.powerOf(pool.pizzaId)));
         uint256 subsidy = uint256(
             int256(pool.pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]
         ) /
