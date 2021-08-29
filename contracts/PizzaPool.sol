@@ -52,13 +52,11 @@ contract PizzaPool is IPizzaPool {
     }
 
     function updateBalance(Pool storage pool) internal {
-        uint256 balance = vbtc.subsidyOf(pool.pizzaId);
-        require(balance > 0);
-        uint256 value = balance - pool.currentBalance;
+        uint256 value = vbtc.subsidyOf(pool.pizzaId);
         if (value > 0) {
             pool.pointsPerShare += (value * 1e60) / vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId));
         }
-        pool.currentBalance = balance;
+        pool.currentBalance += value;
     }
 
     function changePool(uint256 poolId, uint256 power) external override {
@@ -78,6 +76,7 @@ contract PizzaPool is IPizzaPool {
             vbtc.transferFrom(msg.sender, address(this), slice);
             updateBalance(pool);
             vbtc.changePizza(pizzaId, power);
+            pointsCorrection[poolId][msg.sender] -= int256(pool.pointsPerShare * slice);
 
             emit ChangePool(poolId, power);
         } else if (currentPower > power) {
@@ -89,6 +88,7 @@ contract PizzaPool is IPizzaPool {
             updateBalance(pool);
             vbtc.changePizza(pizzaId, power);
             vbtc.transfer(msg.sender, slice);
+            pointsCorrection[poolId][msg.sender] += int256(pool.pointsPerShare * slice);
 
             emit ChangePool(poolId, power);
         }
@@ -169,9 +169,7 @@ contract PizzaPool is IPizzaPool {
     function subsidyOf(uint256 poolId) external view override returns (uint256) {
         Pool memory pool = pools[poolId];
         uint256 pointsPerShare = pool.pointsPerShare;
-        uint256 balance = vbtc.subsidyOf(pool.pizzaId);
-        require(balance > 0);
-        uint256 value = balance - pool.currentBalance;
+        uint256 value = vbtc.subsidyOf(pool.pizzaId);
         if (value > 0) {
             pointsPerShare += (value * 1e60) / vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId));
         }
@@ -183,6 +181,7 @@ contract PizzaPool is IPizzaPool {
 
     function mine(uint256 poolId) external override returns (uint256) {
         Pool storage pool = pools[poolId];
+        vbtc.mine(pool.pizzaId);
         updateBalance(pool);
         uint256 subsidy = uint256(
             int256(pool.pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]
