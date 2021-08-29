@@ -67,6 +67,7 @@ contract PizzaPool is IPizzaPool {
 
         uint256 pizzaId = pool.pizzaId;
         uint256 currentPower = vbtc.powerOf(pizzaId);
+        require(currentPower != power);
 
         if (currentPower < power) {
             // upgrade
