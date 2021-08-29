@@ -56,7 +56,7 @@ contract PizzaPool is IPizzaPool {
         require(balance > 0);
         uint256 value = balance - pool.currentBalance;
         if (value > 0) {
-            pool.pointsPerShare += (value * 1e8) / vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId));
+            pool.pointsPerShare += (value * 1e60) / vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId));
         }
         pool.currentBalance = balance;
     }
@@ -172,11 +172,11 @@ contract PizzaPool is IPizzaPool {
         require(balance > 0);
         uint256 value = balance - pool.currentBalance;
         if (value > 0) {
-            pointsPerShare += (value * 1e8) / vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId));
+            pointsPerShare += (value * 1e60) / vbtc.pizzaPrice(vbtc.powerOf(pool.pizzaId));
         }
         return
             uint256(int256(pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]) /
-            1e8 -
+            1e60 -
             claimed[poolId][msg.sender];
     }
 
@@ -186,7 +186,7 @@ contract PizzaPool is IPizzaPool {
         uint256 subsidy = uint256(
             int256(pool.pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]
         ) /
-            1e8 -
+            1e60 -
             claimed[poolId][msg.sender];
         if (subsidy > 0) {
             claimed[poolId][msg.sender] += subsidy;
