@@ -168,9 +168,12 @@ contract PizzaPool is IPizzaPool {
     function buy(uint256 saleId, uint256 slice) external override {
         Sale storage sale = sales[saleId];
         uint256 poolId = sale.poolId;
-        uint256 price = (slice * sale.price) / sale.slice;
-        sale.slice -= slice;
-        sale.price -= price;
+        uint256 _priceLeft = sale.price;
+        uint256 _slicesLeft = sale.slice;
+        uint256 price = (slice * _priceLeft) / _slicesLeft;
+
+        sale.slice = _slicesLeft - slice;
+        sale.price = _priceLeft - price;
 
         Pool storage pool = pools[poolId];
         int256 correction = int256(pool.pointsPerShare * slice);
@@ -189,7 +192,7 @@ contract PizzaPool is IPizzaPool {
     }
 
     function cancelSale(uint256 saleId) external override {
-        Sale memory sale = sales[saleId];
+        Sale storage sale = sales[saleId];
         require(sale.seller == msg.sender);
 
         emit CancelSale(saleId);
@@ -197,11 +200,12 @@ contract PizzaPool is IPizzaPool {
     }
 
     function subsidyOf(uint256 poolId) external view override returns (uint256) {
-        Pool memory pool = pools[poolId];
+        Pool storage pool = pools[poolId];
         uint256 pointsPerShare = pool.pointsPerShare;
-        uint256 value = vbtc.subsidyOf(pool.pizzaId);
+        uint256 _pizzaId = pool.pizzaId;
+        uint256 value = vbtc.subsidyOf(_pizzaId);
         if (value > 0) {
-            pointsPerShare += (value * 1e60) / (SLICES_PER_POWER * vbtc.powerOf(pool.pizzaId));
+            pointsPerShare += (value * 1e60) / (SLICES_PER_POWER * vbtc.powerOf(_pizzaId));
         }
         return
             uint256(int256(pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]) /
@@ -212,8 +216,9 @@ contract PizzaPool is IPizzaPool {
     function mine(uint256 poolId) external override returns (uint256) {
         Pool storage pool = pools[poolId];
         require(pool.lastRewardBlock != block.number, "Already mined in this block");
-        uint256 slicesIn = vbtc.mine(pool.pizzaId);
-        if (slicesIn > 0) updateBalance(pool, slicesIn, (SLICES_PER_POWER * vbtc.powerOf(pool.pizzaId)));
+        uint256 _pizzaId = pool.pizzaId;
+        uint256 slicesIn = vbtc.mine(_pizzaId);
+        if (slicesIn > 0) updateBalance(pool, slicesIn, (SLICES_PER_POWER * vbtc.powerOf(_pizzaId)));
         uint256 subsidy = uint256(
             int256(pool.pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]
         ) /
