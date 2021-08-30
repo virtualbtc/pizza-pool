@@ -28,6 +28,15 @@ contract PizzaPool is IPizzaPool {
     }
     Sale[] public override sales;
 
+    struct GroupBuying {
+        uint256 poolId;
+        uint256 targetPower;
+        uint256 slicesLeft;
+    }
+    GroupBuying[] public override groupBuyings;
+    mapping(uint256 => mapping(address => uint256)) public override groupBuyingSlices;
+    mapping(uint256 => address[]) internal _groupBuyingParticipants;
+
     uint256 immutable SLICES_PER_POWER;
 
     constructor(IVirtualBitcoin _vbtc) {
@@ -231,5 +240,123 @@ contract PizzaPool is IPizzaPool {
             pool.currentBalance -= subsidy;
         }
         return subsidy;
+    }
+
+    function groupBuyingParticipants(uint256 groupBuyingId)
+        external
+        view
+        override
+        returns (address[] memory participants)
+    {
+        participants = _groupBuyingParticipants[groupBuyingId];
+    }
+
+    function suggestGroupBuying(uint256 targetPower, uint256 _slices) external override returns (uint256) {
+        require(targetPower > 0);
+        uint256 totalSlices = SLICES_PER_POWER * targetPower;
+        require(totalSlices > _slices && _slices > totalSlices / 10);
+        vbtc.transferFrom(msg.sender, address(this), _slices);
+
+        uint256 groupBuyingId = groupBuyings.length;
+
+        groupBuyings.push(
+            GroupBuying({poolId: type(uint256).max, targetPower: targetPower, slicesLeft: totalSlices - _slices})
+        );
+        groupBuyingSlices[groupBuyingId][msg.sender] = _slices;
+        _groupBuyingParticipants[groupBuyingId].push(msg.sender);
+
+        emit SuggestGroupBuying(msg.sender, groupBuyingId, _slices);
+        return groupBuyingId;
+    }
+
+    function participateGroupBuying(uint256 groupBuyingId, uint256 _slices)
+        external
+        override
+        returns (bool started, uint256 poolId)
+    {
+        GroupBuying storage groupBuying = groupBuyings[groupBuyingId];
+        uint256 _slicesLeft = groupBuying.slicesLeft;
+        require(_slicesLeft >= _slices);
+        require(_slices > 0);
+
+        vbtc.transferFrom(msg.sender, address(this), _slices);
+        uint256 newSlices = groupBuyingSlices[groupBuyingId][msg.sender] + _slices;
+        require(newSlices > ((SLICES_PER_POWER * groupBuying.targetPower) / 10));
+
+        groupBuyingSlices[groupBuyingId][msg.sender] = newSlices;
+
+        groupBuying.slicesLeft = _slicesLeft - _slices;
+
+        if (newSlices == _slices) _groupBuyingParticipants[groupBuyingId].push(msg.sender);
+
+        emit UpdateGroupBuying(msg.sender, groupBuyingId, newSlices);
+
+        if (_slicesLeft == _slices) {
+            return _startGroupBuying(groupBuyingId);
+        }
+        return (false, type(uint256).max);
+    }
+
+    function withdrawGroupBuying(uint256 groupBuyingId, uint256 _slices) external override {
+        GroupBuying storage groupBuying = groupBuyings[groupBuyingId];
+
+        uint256 _slicesLeft = groupBuying.slicesLeft;
+        require(_slicesLeft > 0, "Already started");
+
+        uint256 newSlices = groupBuyingSlices[groupBuyingId][msg.sender] - _slices;
+        require(newSlices == 0 || newSlices > ((SLICES_PER_POWER * groupBuying.targetPower) / 10));
+        groupBuyingSlices[groupBuyingId][msg.sender] = newSlices;
+
+        vbtc.transfer(msg.sender, _slices);
+
+        groupBuying.slicesLeft = _slicesLeft + _slices;
+
+        if (newSlices == 0) {
+            uint256 length = _groupBuyingParticipants[groupBuyingId].length;
+
+            for (uint256 i = 0; i < length; i++) {
+                if (_groupBuyingParticipants[groupBuyingId][i] == msg.sender) {
+                    if (i != length - 1) {
+                        _groupBuyingParticipants[groupBuyingId][i] = _groupBuyingParticipants[groupBuyingId][
+                            length - 1
+                        ];
+                    }
+                    _groupBuyingParticipants[groupBuyingId].pop();
+                }
+            }
+        }
+
+        emit UpdateGroupBuying(msg.sender, groupBuyingId, newSlices);
+    }
+
+    function _startGroupBuying(uint256 groupBuyingId) internal returns (bool started, uint256 poolId) {
+        GroupBuying storage groupBuying = groupBuyings[groupBuyingId];
+        uint256 power = groupBuying.targetPower;
+        uint256 pizzaId = vbtc.buyPizza(power);
+        poolId = pools.length;
+
+        pools.push(
+            Pool({
+                owner: address(this),
+                pizzaId: pizzaId,
+                currentBalance: 0,
+                pointsPerShare: 0,
+                lastRewardBlock: block.number
+            })
+        );
+
+        pizzaToPool[pizzaId] = poolId;
+
+        uint256 length = _groupBuyingParticipants[groupBuyingId].length;
+
+        for (uint256 i = 0; i < length; i++) {
+            address _participant = _groupBuyingParticipants[groupBuyingId][i];
+            slices[poolId][_participant] = groupBuyingSlices[groupBuyingId][_participant];
+            delete groupBuyingSlices[groupBuyingId][_participant];
+        }
+
+        emit StartGroupBuying(groupBuyingId);
+        emit CreatePool(poolId, address(this), pizzaId, power);
+        started = true;
     }
 }
