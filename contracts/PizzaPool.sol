@@ -35,7 +35,6 @@ contract PizzaPool is IPizzaPool {
     }
     GroupBuying[] public override groupBuyings;
     mapping(uint256 => mapping(address => uint256)) public override groupBuyingSlices;
-    mapping(uint256 => address[]) internal _groupBuyingParticipants;
 
     uint256 immutable SLICES_PER_POWER;
 
@@ -222,12 +221,30 @@ contract PizzaPool is IPizzaPool {
             claimed[poolId][msg.sender];
     }
 
-    function mine(uint256 poolId) external override returns (uint256) {
+    function mine(uint256 poolId, uint256 groupBuyingId) external override returns (uint256) {
+        if (groupBuyingId == type(uint256).max) {
+            return _mine(poolId);
+        } else {
+            GroupBuying storage groupBuying = groupBuyings[groupBuyingId];
+            require(groupBuying.poolId == poolId);
+
+            if (groupBuyingSlices[groupBuyingId][msg.sender] > 0) {
+                slices[poolId][msg.sender] += groupBuyingSlices[groupBuyingId][msg.sender];
+                delete groupBuyingSlices[groupBuyingId][msg.sender];
+            }
+            require(slices[poolId][msg.sender] > 0);
+
+            return _mine(poolId);
+        }
+    }
+
+    function _mine(uint256 poolId) internal returns (uint256) {
         Pool storage pool = pools[poolId];
-        require(pool.lastRewardBlock != block.number, "Already mined in this block");
         uint256 _pizzaId = pool.pizzaId;
-        uint256 slicesIn = vbtc.mine(_pizzaId);
-        if (slicesIn > 0) updateBalance(pool, slicesIn, (SLICES_PER_POWER * vbtc.powerOf(_pizzaId)));
+        if (pool.lastRewardBlock != block.number) {
+            uint256 slicesIn = vbtc.mine(_pizzaId);
+            if (slicesIn > 0) updateBalance(pool, slicesIn, (SLICES_PER_POWER * vbtc.powerOf(_pizzaId)));
+        }
         uint256 subsidy = uint256(
             int256(pool.pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]
         ) /
@@ -242,19 +259,10 @@ contract PizzaPool is IPizzaPool {
         return subsidy;
     }
 
-    function groupBuyingParticipants(uint256 groupBuyingId)
-        external
-        view
-        override
-        returns (address[] memory participants)
-    {
-        participants = _groupBuyingParticipants[groupBuyingId];
-    }
-
     function suggestGroupBuying(uint256 targetPower, uint256 _slices) external override returns (uint256) {
         require(targetPower > 0);
         uint256 totalSlices = SLICES_PER_POWER * targetPower;
-        require(totalSlices > _slices && _slices > totalSlices / 10);
+        require(_slices > 0);
         vbtc.transferFrom(msg.sender, address(this), _slices);
 
         uint256 groupBuyingId = groupBuyings.length;
@@ -263,35 +271,31 @@ contract PizzaPool is IPizzaPool {
             GroupBuying({poolId: type(uint256).max, targetPower: targetPower, slicesLeft: totalSlices - _slices})
         );
         groupBuyingSlices[groupBuyingId][msg.sender] = _slices;
-        _groupBuyingParticipants[groupBuyingId].push(msg.sender);
 
         emit SuggestGroupBuying(msg.sender, groupBuyingId, _slices);
         return groupBuyingId;
     }
 
-    function participateGroupBuying(uint256 groupBuyingId, uint256 _slices)
+    function participateInGroupBuying(uint256 groupBuyingId, uint256 _slices)
         external
         override
         returns (bool started, uint256 poolId)
     {
         GroupBuying storage groupBuying = groupBuyings[groupBuyingId];
-        uint256 _slicesLeft = groupBuying.slicesLeft;
-        require(_slicesLeft >= _slices);
+        uint256 newSlicesLeft = groupBuying.slicesLeft - _slices;
+        require(newSlicesLeft >= 0);
         require(_slices > 0);
 
         vbtc.transferFrom(msg.sender, address(this), _slices);
         uint256 newSlices = groupBuyingSlices[groupBuyingId][msg.sender] + _slices;
-        require(newSlices > ((SLICES_PER_POWER * groupBuying.targetPower) / 10));
 
         groupBuyingSlices[groupBuyingId][msg.sender] = newSlices;
 
-        groupBuying.slicesLeft = _slicesLeft - _slices;
-
-        if (newSlices == _slices) _groupBuyingParticipants[groupBuyingId].push(msg.sender);
+        groupBuying.slicesLeft = newSlicesLeft;
 
         emit UpdateGroupBuying(msg.sender, groupBuyingId, newSlices);
 
-        if (_slicesLeft == _slices) {
+        if (newSlicesLeft == 0) {
             return _startGroupBuying(groupBuyingId);
         }
         return (false, type(uint256).max);
@@ -304,27 +308,11 @@ contract PizzaPool is IPizzaPool {
         require(_slicesLeft > 0, "Already started");
 
         uint256 newSlices = groupBuyingSlices[groupBuyingId][msg.sender] - _slices;
-        require(newSlices == 0 || newSlices > ((SLICES_PER_POWER * groupBuying.targetPower) / 10));
         groupBuyingSlices[groupBuyingId][msg.sender] = newSlices;
 
         vbtc.transfer(msg.sender, _slices);
 
         groupBuying.slicesLeft = _slicesLeft + _slices;
-
-        if (newSlices == 0) {
-            uint256 length = _groupBuyingParticipants[groupBuyingId].length;
-
-            for (uint256 i = 0; i < length; i++) {
-                if (_groupBuyingParticipants[groupBuyingId][i] == msg.sender) {
-                    if (i != length - 1) {
-                        _groupBuyingParticipants[groupBuyingId][i] = _groupBuyingParticipants[groupBuyingId][
-                            length - 1
-                        ];
-                    }
-                    _groupBuyingParticipants[groupBuyingId].pop();
-                }
-            }
-        }
 
         emit UpdateGroupBuying(msg.sender, groupBuyingId, newSlices);
     }
@@ -346,14 +334,10 @@ contract PizzaPool is IPizzaPool {
         );
 
         pizzaToPool[pizzaId] = poolId;
+        groupBuying.poolId = poolId;
 
-        uint256 length = _groupBuyingParticipants[groupBuyingId].length;
-
-        for (uint256 i = 0; i < length; i++) {
-            address _participant = _groupBuyingParticipants[groupBuyingId][i];
-            slices[poolId][_participant] = groupBuyingSlices[groupBuyingId][_participant];
-            delete groupBuyingSlices[groupBuyingId][_participant];
-        }
+        slices[poolId][msg.sender] = groupBuyingSlices[groupBuyingId][msg.sender];
+        delete groupBuyingSlices[groupBuyingId][msg.sender];
 
         emit StartGroupBuying(groupBuyingId);
         emit CreatePool(poolId, address(this), pizzaId, power);

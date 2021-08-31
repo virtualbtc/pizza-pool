@@ -62,7 +62,7 @@ interface IPizzaPool {
 
     function subsidyOf(uint256 poolId) external view returns (uint256);
 
-    function mine(uint256 poolId) external returns (uint256);
+    function mine(uint256 poolId, uint256 groupBuyingId) external returns (uint256);
 
     function groupBuyings(uint256 groupBuyingId)
         external
@@ -75,11 +75,9 @@ interface IPizzaPool {
 
     function groupBuyingSlices(uint256 groupBuyingId, address participant) external view returns (uint256 slices);
 
-    function groupBuyingParticipants(uint256 groupBuyingId) external view returns (address[] calldata participants);
-
     function suggestGroupBuying(uint256 targetPower, uint256 _slices) external returns (uint256);
 
-    function participateGroupBuying(uint256 groupBuyingId, uint256 _slices)
+    function participateInGroupBuying(uint256 groupBuyingId, uint256 _slices)
         external
         returns (bool started, uint256 poolId);
 
