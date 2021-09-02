@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "build": "rimraf abis artifacts cache coverage typechain && hardhat compile",
+    "test": "cross-env TS_NODE_TRANSPILE_ONLY=1 hardhat test",
+    "pretty": "prettier --write contracts/**/*.sol"
+  },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.2",
     "@nomiclabs/hardhat-etherscan": "^2.1.3",
