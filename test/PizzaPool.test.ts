@@ -296,4 +296,101 @@ describe("PizzaPool", () => {
     expect((await pool.groupBuyings(1)).slicesLeft).to.be.equal(slicesPerPower.mul(5));
     expect(await pool.groupBuyingSlices(1, deployer.address)).to.be.equal(0);
   });
+
+  it("overall test ", async () => {
+    const { deployer, alice, bob, carol, dan, vbtc, pool } = await setupTest();
+
+    const slicesPerPower = await pool.SLICES_PER_POWER();
+    const slicesPerPowerHalf = slicesPerPower.div(2);
+
+    await vbtc.transfer(alice.address, slicesPerPower.mul(10));
+    await vbtc.transfer(bob.address, slicesPerPower.mul(10));
+    await vbtc.transfer(carol.address, slicesPerPower.mul(10));
+    await vbtc.transfer(dan.address, slicesPerPower.mul(10));
+
+    await mineTo(100);
+    await expect(pool.createPool(4)).to.emit(pool, "CreatePool").withArgs(0, deployer.address, 1, 4);
+
+    await expect(pool.sell(0, slicesPerPower.mul(2), slicesPerPower.mul(2))).to.emit(pool, "Sell").withArgs(0, deployer.address, 0, slicesPerPower.mul(2), slicesPerPower.mul(2));
+
+    await mineTo(105);
+    await autoMining(false);
+    await pool.connect(alice).buy(0, slicesPerPower);
+    await pool.connect(bob).buy(0, slicesPerPower);
+
+    await expect(() => mine()).to.changeTokenBalances(vbtc, [alice, bob], [-slicesPerPower, -slicesPerPower]);
+
+    await mineTo(110);
+    const p0_10blocks_rewardpp = (await vbtc.subsidyAt(100)).mul(10).div(5);
+
+    await pool.connect(alice).mine(0, MaxUint256);
+    await pool.connect(bob).mine(0, MaxUint256);
+
+    await expect(() => mine()).to.changeTokenBalances(vbtc, [alice, bob], [p0_10blocks_rewardpp.div(2), p0_10blocks_rewardpp.div(2)]);
+
+    await autoMining(true);
+    await expect(pool.sell(0, 100, 1000)).to.emit(pool, "Sell").withArgs(1, deployer.address, 0, 100, 1000);
+    await pool.connect(alice).buy(1, 10);
+    expect((await pool.sales(1))[2]).to.be.equal(90);
+    expect((await pool.sales(1))[3]).to.be.equal(900);
+
+    await pool.cancelSale(1);
+    expect((await pool.sales(1))[2]).to.be.equal(0);
+    expect((await pool.sales(1))[3]).to.be.equal(0);
+
+    await expect(pool.cancelSale(1)).to.be.reverted;
+
+    expect(await pool.slices(0, bob.address)).to.be.equal(slicesPerPower);
+
+    await expect(pool.connect(bob).sell(0, slicesPerPower, slicesPerPower)).to.emit(pool, "Sell").withArgs(2, bob.address, 0, slicesPerPower, slicesPerPower);
+
+    await expect(pool.connect(bob).sell(0, slicesPerPower, slicesPerPower)).to.emit(pool, "Sell").withArgs(3, bob.address, 0, slicesPerPower, slicesPerPower);
+
+    await mineTo(120);
+    await pool.connect(carol).buy(2, slicesPerPower);
+
+    expect(await pool.slices(0, bob.address)).to.be.equal(0);
+    expect(await pool.slices(0, carol.address)).to.be.equal(slicesPerPower);
+
+    await expect(pool.connect(dan).buy(3, slicesPerPower)).to.be.reverted;
+    
+    await mineTo(150);
+    await autoMining(false);
+    await pool.connect(bob).mine(0, MaxUint256);
+    await pool.connect(carol).mine(0, MaxUint256);
+    await expect(() => mine()).to.changeTokenBalances(vbtc, [bob, carol], [p0_10blocks_rewardpp, p0_10blocks_rewardpp.mul(3)]);
+    await autoMining(true);
+
+    await mineTo(190);
+    await expect(pool.connect(alice).suggestGroupBuying(5, slicesPerPower)).to.emit(pool, "SuggestGroupBuying").withArgs(alice.address, 0, slicesPerPower);
+    await pool.connect(bob).participateInGroupBuying(0, slicesPerPower.mul(2));
+    
+    await mineTo(200);
+    await pool.connect(carol).participateInGroupBuying(0, slicesPerPower.mul(2));
+    
+    expect(await pool.groupBuyingSlices(0, bob.address)).to.be.equal(slicesPerPower.mul(2));
+    expect((await pool.groupBuyings(0)).poolId).to.be.equal(1);
+    expect(await pool.slices(1, bob.address)).to.be.equal(0);
+    
+    const p1_10blocks_rewardpp = (await vbtc.subsidyAt(200)).mul(10).div(10);
+
+    await expect(pool.connect(bob).sell(1, slicesPerPower, slicesPerPower)).to.be.reverted;
+
+    await mineTo(210);
+    await expect(() => pool.connect(bob).mine(1, 0)).to.changeTokenBalance(vbtc, bob, p1_10blocks_rewardpp.mul(2));
+
+    expect(await pool.groupBuyingSlices(0, bob.address)).to.be.equal(0);
+    expect(await pool.slices(1, bob.address)).to.be.equal(slicesPerPower.mul(2));
+
+    await expect(pool.connect(bob).sell(1, slicesPerPower, slicesPerPower)).to.emit(pool, "Sell").withArgs(4, bob.address, 1, slicesPerPower, slicesPerPower);
+
+    await mineTo(220);
+    await pool.connect(carol).buy(4, slicesPerPower);
+
+    await mineTo(230);
+    await autoMining(false);
+    await pool.connect(bob).mine(1, MaxUint256);
+    await pool.connect(carol).mine(1, MaxUint256);
+    await expect(() => mine()).to.changeTokenBalances(vbtc, [bob, carol], [p1_10blocks_rewardpp.mul(3), p1_10blocks_rewardpp.mul(2*3 + 1*1)]);
+  });
 });
