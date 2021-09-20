@@ -36,7 +36,7 @@ contract PizzaPool is IPizzaPool {
     GroupBuying[] public override groupBuyings;
     mapping(uint256 => mapping(address => uint256)) public override groupBuyingSlices;
 
-    uint256 immutable SLICES_PER_POWER;
+    uint256 public immutable SLICES_PER_POWER;
 
     constructor(IVirtualBitcoin _vbtc) {
         vbtc = _vbtc;
@@ -133,6 +133,8 @@ contract PizzaPool is IPizzaPool {
         Pool storage pool = pools[poolId];
         require(pool.owner == msg.sender);
 
+        _mine(poolId, msg.sender);
+
         uint256 pizzaId = pool.pizzaId;
         uint256 slice = SLICES_PER_POWER * (vbtc.powerOf(pizzaId));
         slices[poolId][msg.sender] -= slice;
@@ -161,6 +163,7 @@ contract PizzaPool is IPizzaPool {
         uint256 slice,
         uint256 price
     ) external override returns (uint256) {
+        require(slices[poolId][msg.sender] >= slice);
         uint256 saleId = sales.length;
         sales.push(Sale({seller: msg.sender, poolId: poolId, slice: slice, price: price}));
 
@@ -184,6 +187,12 @@ contract PizzaPool is IPizzaPool {
         sale.price = _priceLeft - price;
 
         Pool storage pool = pools[poolId];
+        if (pool.lastRewardBlock != block.number) {
+            uint256 _pizzaId = pool.pizzaId;
+            uint256 slicesIn = vbtc.mine(_pizzaId);
+            if (slicesIn > 0) updateBalance(pool, slicesIn, (SLICES_PER_POWER * vbtc.powerOf(_pizzaId)));
+        }
+
         int256 correction = int256(pool.pointsPerShare * slice);
         pointsCorrection[poolId][sale.seller] += correction;
         pointsCorrection[poolId][msg.sender] -= correction;
@@ -223,7 +232,7 @@ contract PizzaPool is IPizzaPool {
 
     function mine(uint256 poolId, uint256 groupBuyingId) external override returns (uint256) {
         if (groupBuyingId == type(uint256).max) {
-            return _mine(poolId);
+            return _mine(poolId, msg.sender);
         } else {
             GroupBuying storage groupBuying = groupBuyings[groupBuyingId];
             require(groupBuying.poolId == poolId);
@@ -234,26 +243,26 @@ contract PizzaPool is IPizzaPool {
             }
             require(slices[poolId][msg.sender] > 0);
 
-            return _mine(poolId);
+            return _mine(poolId, msg.sender);
         }
     }
 
-    function _mine(uint256 poolId) internal returns (uint256) {
+    function _mine(uint256 poolId, address owner) internal returns (uint256) {
         Pool storage pool = pools[poolId];
-        uint256 _pizzaId = pool.pizzaId;
         if (pool.lastRewardBlock != block.number) {
+            uint256 _pizzaId = pool.pizzaId;
             uint256 slicesIn = vbtc.mine(_pizzaId);
             if (slicesIn > 0) updateBalance(pool, slicesIn, (SLICES_PER_POWER * vbtc.powerOf(_pizzaId)));
         }
         uint256 subsidy = uint256(
-            int256(pool.pointsPerShare * slices[poolId][msg.sender]) + pointsCorrection[poolId][msg.sender]
+            int256(pool.pointsPerShare * slices[poolId][owner]) + pointsCorrection[poolId][owner]
         ) /
             1e60 -
-            claimed[poolId][msg.sender];
+            claimed[poolId][owner];
         if (subsidy > 0) {
-            claimed[poolId][msg.sender] += subsidy;
-            emit Mine(msg.sender, poolId, subsidy);
-            vbtc.transfer(msg.sender, subsidy);
+            claimed[poolId][owner] += subsidy;
+            emit Mine(owner, poolId, subsidy);
+            vbtc.transfer(owner, subsidy);
             pool.currentBalance -= subsidy;
         }
         return subsidy;
